@@ -197,7 +197,9 @@ const NewProject = () => {
         setTestType(selectedName);
     }
 
-    let inputDir = '';
+    let serverId = '';
+    let remoteInputDir = '';
+    let remoteDir = '';
     // 4. Submit handler
     const handleSubmit = async (data) => {
 
@@ -215,6 +217,7 @@ const NewProject = () => {
 
         // Add project/folder name
         formData.append('project', selectedFolder);
+        formData.append('projectName', data.projectName);
 
         try {
             formData.append('email', email);
@@ -222,7 +225,9 @@ const NewProject = () => {
             const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/uploads`, formData);
             saveToHistory('localDirectoryHistory', data.localDirectory, setLocalDirSuggestions);
             saveToHistory('outputDirectoryHistory', data.outputDirectory, setOutputDirSuggestions)
-            inputDir = res.data[0].inputDir;
+            remoteInputDir = res.data[0].remoteInputDir;
+            serverId = res.data[0].serverId;
+            remoteDir = res.data[0].remoteDir;
             for (let i = 0; i < res.data.length; i++) {
                 if (!sampleIds.includes(res.data[i].sampleId)) {
                     sampleIds.push(res.data[i].sampleId);
@@ -252,11 +257,13 @@ const NewProject = () => {
                 if (mode === 'server_mode') {
                     analysisRes = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/server-mode`, {
                         projectName: data.projectName,
-                        inputDir,
+                        remoteInputDir,
                         testType: testType,
                         email: email,
                         sampleIds: sampleIds,
                         numberOfSamples: numberOfSamples,
+                        serverId,
+                        remoteDir
                     })
                 }
                 else {
