@@ -156,13 +156,13 @@ const NewProject = () => {
 
         // Send folder structure metadata
 
-        for (const file of files) {
-            const formData = new FormData(); // Create a fresh FormData for each file
+        // for (const file of files) {
+        //     const formData = new FormData(); // Create a fresh FormData for each file
 
-            formData.append('file', file, file.webkitRelativePath);
-            formData.append('targetDirectory', form.getValues('inputDirectory'));
-            setFiles(prevFiles => [...prevFiles, file]); // Update state with selected files
-        }
+        //     formData.append('file', file, file.webkitRelativePath);
+        //     formData.append('targetDirectory', form.getValues('inputDirectory'));
+        //     setFiles(prevFiles => [...prevFiles, file]); // Update state with selected files
+        // }
 
         try {
             setIsUploading(true); // Show progress bar
@@ -211,8 +211,11 @@ const NewProject = () => {
             formData.append('file', excelFile);
         }
 
-        for (let i = 0; i < Files.length; i++) {
-            formData.append('file', Files[i]);
+        const fileInput = document.querySelector('input[name="inputDirectory"]');
+        const selectedFiles = Array.from(fileInput.files); // get FileList
+
+        for (let i = 0; i < selectedFiles.length; i++) {
+            formData.append('file', selectedFiles[i], selectedFiles[i].webkitRelativePath);
         }
 
         // Add project/folder name
@@ -222,7 +225,13 @@ const NewProject = () => {
         try {
             formData.append('email', email);
             setShowDialog(true); // Show dialog
-            const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/uploads`, formData);
+            const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/uploads`, formData,{
+                headers:{
+                    'Content-Type': 'multipart/form-data',
+                },
+                maxBodyLength: Infinity,
+                maxContentLength: Infinity,
+            });
             saveToHistory('localDirectoryHistory', data.localDirectory, setLocalDirSuggestions);
             saveToHistory('outputDirectoryHistory', data.outputDirectory, setOutputDirSuggestions)
             remoteInputDir = res.data[0].remoteInputDir;
