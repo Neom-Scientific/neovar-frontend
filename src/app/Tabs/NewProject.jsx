@@ -1,7 +1,7 @@
 
 'use client'
 
-import React, { use, useEffect, useState } from 'react'
+import React, { use, useEffect, useRef, useState } from 'react'
 import {
     Form,
     FormField,
@@ -30,7 +30,9 @@ import axios, { all } from 'axios';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { toast, ToastContainer } from 'react-toastify'
 import Cookies from 'js-cookie'
-import { get } from 'http'
+import path from 'path-browserify'
+import { v4 as uuidv4 } from 'uuid';
+
 
 
 // 1. Validation schema
@@ -73,10 +75,27 @@ const NewProject = () => {
     const [filteredOutputDirSuggestions, setFilteredOutputDirSuggestions] = useState([]);
     const [showLocalDirSuggestions, setShowLocalDirSuggestions] = useState(false);
     const [showOutputDirSuggestions, setShowOutputDirSuggestions] = useState(false);
+    const [sampleIds, setSampleIds] = useState([]);
 
-    const sampleIds = [];
+    const serverUserRef = useRef(null);
+    const remoteInputDirRef = useRef(null);
+    const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB
+    // const sampleIds = [];
 
-    // 2. Setup form
+    const cleanId = (id) => {
+        if (!id) return '';
+        return id
+            .toString()
+            .trim()
+            .normalize()
+            .replace(/(_R[12]|_[12])$/, ''); // remove _R1, _R2, _1, _2
+    };
+
+    const extractBaseName = (fileName) => {
+        let baseName = path.basename(fileName).replace(/\.(fastq|fq)(\.gz)?$/i, '');
+        baseName = cleanId(baseName);
+        return baseName;
+    };
 
     let email, mode;
     const user = Cookies.get('NeoVar_user');
@@ -107,87 +126,222 @@ const NewProject = () => {
 
 
     // 1. Excel sheet input handler
+    // const handleSheetData = (e) => {
+    //     const file = e.target.files[0];
+    //     setExcelFile(file);
+    //     const reader = new FileReader();
+    //     reader.onload = async (e) => {
+    //         const data = new Uint8Array(e.target.result);
+    //         const workbook = XLSX.read(data, { type: 'array' });
+    //         const sheetName = workbook.SheetNames[0];
+    //         const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+
+    //         // // console.log('📊 Parsed Sheet Data:', sheetData);
+    //         const sample = sheetData.length;
+    //         setNumberOfSamples(sample);
+
+    //         setExcelData(sheetData);
+    //     };
+
+    //     reader.readAsArrayBuffer(file);
+
+    // const file = e.target.files[0];
+    // if (!file) return;
+
+    // const data = await file.arrayBuffer();
+    // const workbook = XLSX.read(data);
+    // const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+
+    // const ids = sheetData
+    //   .map(row => cleanId(row['Sample ID']))
+    //   .filter(Boolean);
+
+    // setSampleIds(ids);
+
+    // alert(`Excel loaded with ${ids.length} Sample IDs`);
+    // }
+
     const handleSheetData = (e) => {
         const file = e.target.files[0];
-        setExcelFile(file);
+        if (!file) return;
+
+        setExcelFile(file); // If you still want to store the file object
+
         const reader = new FileReader();
         reader.onload = async (e) => {
+            // Read the binary data into Uint8Array
             const data = new Uint8Array(e.target.result);
+
+            // Parse the workbook
             const workbook = XLSX.read(data, { type: 'array' });
+
+            // Get the first sheet
             const sheetName = workbook.SheetNames[0];
             const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
 
-            // // console.log('📊 Parsed Sheet Data:', sheetData);
-            const sample = sheetData.length;
-            setNumberOfSamples(sample);
-
+            // Store full sheet data for table display
             setExcelData(sheetData);
+
+            // Store number of samples
+            setNumberOfSamples(sheetData.length);
+
+            // Extract and clean "Sample ID" column
+            const ids = sheetData
+                .map(row => cleanId(row['Sample ID']))
+                .filter(Boolean);
+
+            setSampleIds(ids);
+
+            alert(`✅ Excel loaded: ${ids.length} Sample IDs, ${sheetData.length} total rows`);
         };
 
         reader.readAsArrayBuffer(file);
-    }
+    };
+
 
     // 2. directory input handler
+    // const handleDirectory = async (e) => {
+    //     const files = Array.from(e.target.files);
+    //     // // console.log('Selected files:', files);
+
+    //     if (files.length === 0) {
+    //         setSelectedFolder(''); // Reset if no folder is selected
+    //         return;
+    //     }
+
+    //     // Extract the folder name from the first file's path
+    //     const folderPath = files[0].webkitRelativePath.split('/')[0];
+    //     setSelectedFolder(folderPath); // Update the selected folder name
+
+    //     const folders = new Set();
+
+    //     // Extract folder structure
+    //     files.forEach((file) => {
+    //         const pathParts = file.webkitRelativePath.split('/');
+    //         pathParts.pop(); // Remove file name
+    //         let folderPath = '';
+    //         for (const part of pathParts) {
+    //             folderPath += (folderPath ? '/' : '') + part;
+    //             folders.add(folderPath);
+    //         }
+    //     });
+
+    //     try {
+    //         setIsUploading(true); // Show progress bar
+    //         setProgressValue(0); // Reset progress value
+    //         setShowPopup(true); // Show popup
+
+    //         // Simulate upload progress
+    //         const simulateProgress = () => {
+    //             setProgressValue((prev) => {
+    //                 if (prev >= 100) {
+    //                     clearInterval(interval); // Ensure interval is cleared when progress reaches 100%
+    //                     setIsUploading(false); // Hide progress bar
+    //                     setShowPopup(false); // Close popup
+    //                     return 100;
+    //                 }
+    //                 return prev + 10; // Increment progress by 10%
+    //             });
+    //         };
+
+    //         const interval = setInterval(simulateProgress, 500); // Update progress every 500ms
+    //     } catch (error) {
+    //         console.error('Upload error:', error);
+    //         setIsUploading(false); // Hide progress bar in case of error
+    //     }
+    // };
+
     const handleDirectory = async (e) => {
         const files = Array.from(e.target.files);
-        // // console.log('Selected files:', files);
-
-        if (files.length === 0) {
-            setSelectedFolder(''); // Reset if no folder is selected
-            return;
-        }
-
-        // Extract the folder name from the first file's path
-        const folderPath = files[0].webkitRelativePath.split('/')[0];
-        setSelectedFolder(folderPath); // Update the selected folder name
-
-        const folders = new Set();
-
-        // Extract folder structure
-        files.forEach((file) => {
-            const pathParts = file.webkitRelativePath.split('/');
-            pathParts.pop(); // Remove file name
-            let folderPath = '';
-            for (const part of pathParts) {
-                folderPath += (folderPath ? '/' : '') + part;
-                folders.add(folderPath);
-            }
-        });
-
-        // Send folder structure metadata
-
-        // for (const file of files) {
-        //     const formData = new FormData(); // Create a fresh FormData for each file
-
-        //     formData.append('file', file, file.webkitRelativePath);
-        //     formData.append('targetDirectory', form.getValues('inputDirectory'));
-        //     setFiles(prevFiles => [...prevFiles, file]); // Update state with selected files
-        // }
+        if (files.length === 0) return;
+        const projectName = document.querySelector('input[name="projectName"]').value.trim();
+        console.log('projectName:', projectName);
 
         try {
             setIsUploading(true); // Show progress bar
-            setProgressValue(0); // Reset progress value
-            setShowPopup(true); // Show popup
+            setProgressValue(0);  // Reset progress
+            setShowPopup(true);   // Show popup
 
-            // Simulate upload progress
-            const simulateProgress = () => {
-                setProgressValue((prev) => {
-                    if (prev >= 100) {
-                        clearInterval(interval); // Ensure interval is cleared when progress reaches 100%
-                        setIsUploading(false); // Hide progress bar
-                        setShowPopup(false); // Close popup
-                        return 100;
+            for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
+                const file = files[fileIndex];
+
+                // FASTQ/FQ validation
+                if (/\.(fastq|fq)(\.gz)?$/i.test(file.name)) {
+                    const baseName = extractBaseName(file.name);
+                    const matched = sampleIds.some(id => cleanId(id) === baseName);
+                    if (!matched) {
+                        alert(`❌ FASTQ file "${file.name}" not found in Excel's "Sample ID" column`);
+                        form.setValue('inputDirectory', ''); // Reset input directory
+                        continue; // Skip invalid files
                     }
-                    return prev + 10; // Increment progress by 10%
-                });
-            };
+                }
 
-            const interval = setInterval(simulateProgress, 500); // Update progress every 500ms
+                // Chunked upload
+                const fileId = uuidv4();
+                const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+                for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+                    const start = chunkIndex * CHUNK_SIZE;
+                    const end = Math.min(start + CHUNK_SIZE, file.size);
+                    const chunk = file.slice(start, end);
+
+                    const formData = new FormData();
+                    formData.append('chunk', chunk);
+                    formData.append('fileId', fileId);
+                    formData.append('chunkIndex', chunkIndex);
+                    formData.append('projectName', projectName);
+
+
+                    const response = await axios.post(
+                        `${process.env.NEXT_PUBLIC_API_URL}/uploads?fileId=${fileId}&chunkIndex=${chunkIndex}&projectName=${projectName}`,
+                        formData,
+                        {
+                            headers: { 'Content-Type': 'multipart/form-data' },
+                            onUploadProgress: (progressEvent) => {
+                                const percentThisFile = Math.round(
+                                    ((chunkIndex + progressEvent.loaded / progressEvent.total) / totalChunks) * 100
+                                );
+                                // Convert to total percent across all files
+                                const overallPercent = Math.round(
+                                    ((fileIndex + percentThisFile / 100) / files.length) * 100
+                                );
+                                setProgressValue(overallPercent);
+                            },
+                        }
+                    );
+                    // server_user = "server"; // replace with response.data.server if backend sends it
+                    serverUserRef.current = response.data.server;
+                    console.log('server_user:', serverUserRef.current);
+                }
+
+                // Merge chunks after upload
+                const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/merge`, {
+                    server_user: serverUserRef.current,
+                    fileName: file.name,
+                    fileId,
+                    totalChunks,
+                    projectName,
+                });
+                remoteInputDirRef.current = response.data.inputDir;
+                console.log('remoteInputDir:', remoteInputDirRef.current);
+            }
+
+
+            
+
+            setProgressValue(100);
+            setTimeout(() => {
+                setIsUploading(false);
+                setShowPopup(false);
+            }, 500);
+
+            alert('✅ All valid files uploaded and merged!');
         } catch (error) {
             console.error('Upload error:', error);
-            setIsUploading(false); // Hide progress bar in case of error
+            setIsUploading(false);
+            setShowPopup(false);
         }
     };
+
 
     // 3. test type handler
     const handleSelectTestType = (e) => {
@@ -197,13 +351,15 @@ const NewProject = () => {
         setTestType(selectedName);
     }
 
-    let serverId = '';
-    let remoteInputDir = '';
-    let remoteDir = '';
+    // let serverId = '';
+    // let remoteInputDir = '';
+    // let remoteDir = '';
     // 4. Submit handler
     const handleSubmit = async (data) => {
 
-        let allUploadsSuccessful = true;
+        console.log('server_user:', serverUserRef.current);
+        console.log('remoteInputDir:', remoteInputDirRef.current);
+        // let allUploadsSuccessful = true;
 
         const formData = new FormData();
 
@@ -222,57 +378,57 @@ const NewProject = () => {
         formData.append('project', selectedFolder);
         formData.append('projectName', data.projectName);
 
+        // try {
+        //     formData.append('email', email);
+        //     setShowDialog(true); // Show dialog
+        //     const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/uploads`, formData, {
+        //         headers: {
+        //             'Content-Type': 'multipart/form-data',
+        //         },
+        //         maxBodyLength: Infinity,
+        //         maxContentLength: Infinity,
+        //     });
+        //     saveToHistory('localDirectoryHistory', data.localDirectory, setLocalDirSuggestions);
+        //     saveToHistory('outputDirectoryHistory', data.outputDirectory, setOutputDirSuggestions)
+        //     remoteInputDir = res.data[0].remoteInputDir;
+        //     serverId = res.data[0].serverId;
+        //     remoteDir = res.data[0].remoteDir;
+        //     for (let i = 0; i < res.data.length; i++) {
+        //         if (!sampleIds.includes(res.data[i].sampleId)) {
+        //             sampleIds.push(res.data[i].sampleId);
+        //         }
+        //     }
+
+
+        //     if (res.data[0].status === 400) {
+        //         allUploadsSuccessful = false;
+        //         setShowDialog(false);
+        //         toast.error(res.data[0].message, {
+        //             position: "top-right",
+        //             autoClose: 5000,
+        //         });
+        //     }
+
+        // } catch (err) {
+        //     console.error('Error uploading:', err);
+        //     allUploadsSuccessful = false;
+        //     setShowDialog(false); // Hide dialog
+        // }
+
         try {
-            formData.append('email', email);
-            setShowDialog(true); // Show dialog
-            const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/uploads`, formData,{
-                headers:{
-                    'Content-Type': 'multipart/form-data',
-                },
-                maxBodyLength: Infinity,
-                maxContentLength: Infinity,
-            });
-            saveToHistory('localDirectoryHistory', data.localDirectory, setLocalDirSuggestions);
-            saveToHistory('outputDirectoryHistory', data.outputDirectory, setOutputDirSuggestions)
-            remoteInputDir = res.data[0].remoteInputDir;
-            serverId = res.data[0].serverId;
-            remoteDir = res.data[0].remoteDir;
-            for (let i = 0; i < res.data.length; i++) {
-                if (!sampleIds.includes(res.data[i].sampleId)) {
-                    sampleIds.push(res.data[i].sampleId);
-                }
-            }
-
-
-            if (res.data[0].status === 400) {
-                allUploadsSuccessful = false;
-                setShowDialog(false);
-                toast.error(res.data[0].message, {
-                    position: "top-right",
-                    autoClose: 5000,
-                });
-            }
-
-        } catch (err) {
-            console.error('Error uploading:', err);
-            allUploadsSuccessful = false;
-            setShowDialog(false); // Hide dialog
-        }
-
-        try {
-            if (allUploadsSuccessful) {
+            // if (allUploadsSuccessful) {
                 toast.success('Analysis Completed');
                 let analysisRes;
                 if (mode === 'server_mode') {
                     analysisRes = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/server-mode`, {
                         projectName: data.projectName,
-                        remoteInputDir,
+                        remoteInputDir:remoteInputDirRef.current,
                         testType: testType,
                         email: email,
                         sampleIds: sampleIds,
                         numberOfSamples: numberOfSamples,
-                        serverId,
-                        remoteDir
+                        server_user:serverUserRef.current,
+                        // remoteDir
                     })
                 }
                 else {
@@ -318,7 +474,7 @@ const NewProject = () => {
                     });
                 }
 
-            }
+            // }
 
         }
         catch (error) {
@@ -416,6 +572,36 @@ const NewProject = () => {
                             )}
                         />
 
+                        {/* Excel Sheet Upload */}
+                        <FormItem>
+                            <div className='flex justify-start items-center w-[100%] gap-8'>
+                                <div className='w-[50%]'>
+                                    <FormLabel className="my-4 text-2xl">Upload Excel Sheet</FormLabel>
+                                    <Input
+                                        type="file"
+                                        accept=".xls,.xlsx"
+                                        name="excelSheet"
+                                        placeholder="Upload Excel Sheet"
+                                        className="border rounded-md cursor-pointer p-2 focus-within:ring-orange-500"
+                                        onChange={handleSheetData}
+                                    />
+                                    <p className="mt-2 text-sm text-muted-foreground">
+                                        Supported formats: .xls, .xlsx
+                                    </p>
+                                </div>
+                                <div className='w-[50%]'>
+                                    <FormLabel className="my-4 text-2xl">Download Sheet Fromat</FormLabel>
+                                    <a
+                                        href="/downloads/nipt.xls"
+                                        className="bg-orange-500 text-white px-4 py-2 rounded hover:bg-orange-600 transition"
+                                        download
+                                    >
+                                        Download Excel File
+                                    </a>
+                                </div>
+                            </div>
+                        </FormItem>
+
                         {/* Input Directory */}
                         <FormField
                             control={form.control}
@@ -423,13 +609,15 @@ const NewProject = () => {
                             render={({ field }) => (
                                 <FormItem>
                                     <FormLabel className="my-4 text-2xl">Select Input Directory</FormLabel>
+                                    {/* <input type="file" multiple onChange={handleFileUpload} /> */}
                                     <Input
                                         type="file"
                                         name="inputDirectory"
-                                        webkitdirectory="true"
-                                        directory="true"
+                                        // webkitdirectory="true"
+                                        // directory="true"
                                         multiple
                                         {...field}
+                                        value={field.value ?? ''}
                                         className="w-[50%] cursor-pointer focus-within:ring-orange-500"
                                         placeholder="Input Directory"
                                         onChange={handleDirectory}
@@ -618,38 +806,6 @@ const NewProject = () => {
                                 />
                             </>
                         )}
-
-
-
-                        {/* Excel Sheet Upload */}
-                        <FormItem>
-                            <div className='flex justify-start items-center w-[100%] gap-8'>
-                                <div className='w-[50%]'>
-                                    <FormLabel className="my-4 text-2xl">Upload Excel Sheet</FormLabel>
-                                    <Input
-                                        type="file"
-                                        accept=".xls,.xlsx"
-                                        name="excelSheet"
-                                        placeholder="Upload Excel Sheet"
-                                        className="border rounded-md cursor-pointer p-2 focus-within:ring-orange-500"
-                                        onChange={handleSheetData}
-                                    />
-                                    <p className="mt-2 text-sm text-muted-foreground">
-                                        Supported formats: .xls, .xlsx
-                                    </p>
-                                </div>
-                                <div className='w-[50%]'>
-                                    <FormLabel className="my-4 text-2xl">Download Sheet Fromat</FormLabel>
-                                    <a
-                                        href="/downloads/nipt.xls"
-                                        className="bg-orange-500 text-white px-4 py-2 rounded hover:bg-orange-600 transition"
-                                        download
-                                    >
-                                        Download Excel File
-                                    </a>
-                                </div>
-                            </div>
-                        </FormItem>
 
                         {/* Test Type Selection */}
                         <FormField
